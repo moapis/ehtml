@@ -74,7 +74,7 @@ Define some templates:
 {{- end -}}
 ````
 
-Parse them into a globale variable (or object):
+Parse them into a globale variable (or part of your Handler object). One can also use `ParseFiles()` or `ParseGlob()`:
 
 ````
 var errorPages = &Pages{template.Must(template.New("error").Parse(templates))}
@@ -91,7 +91,7 @@ r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request
 })
 ````
 
-And whenever something goes wrong in you handlers, call `Render()`:
+And whenever something goes wrong in your handlers, call `Render()`:
 
 ````
 err := p.Render(w, req, http.StatusInternalServerError, "DB connection", struct{ RequestID int }{666})

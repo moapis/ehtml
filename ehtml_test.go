@@ -239,54 +239,69 @@ func TestPages_Render_WriteError(t *testing.T) {
 	}
 }
 
+const exampleTemplates = `
+{{- define "head" -}}
+<head>
+	<meta charset="utf-8">
+	<title>{{ .String }}</title>
+</head>
+{{- end -}}
+
+{{- define "error" -}}
+<!DOCTYPE html>
+<html lang="en">
+{{ template "head" }}
+<body>
+	<h1>{{ .StatusCode }} {{ .StatusText }}</h1>
+	<p>
+		{{ .Message }} while serving {{ .Request.URL.Path }}.
+		Request ID: {{ .Data.RequestID }}
+	</p>
+	<p><i>This is a generic error page</i><p>
+</body>
+</html>
+{{- end -}}
+
+{{- define "500" -}}
+<!DOCTYPE html>
+<html lang="en">
+{{ template "head" }}
+<body>
+	<h1>Snap!</h1>
+	<h2>{{ .StatusCode }} {{ .StatusText }}</h2>
+	<p>
+		Something went really wrong and we've been notified!
+		Please try again later.
+	</p>
+	<p><i>
+		Error: {{ .Message }} while serving {{ .Request.URL.Path }}.
+		Request ID: {{ .Data.RequestID }}
+	</i></p>
+</body>
+</html>
+{{- end -}}
+
+{{- define "404" -}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	{{ template "head" }}
+</head>
+<body>
+	<h1>{{ .StatusCode }} {{ .StatusText }}</h1>
+	<p>
+		{{ .Request.URL.Path }} could not be found.
+</body>
+</html>
+{{- end -}}`
+
 func Example() {
-	templates := `
-	{{- define "head" -}}
-	<head>
-		<meta charset="utf-8">
-		<title>{{ .String }}</title>
-	</head>
-	{{- end -}}
-
-	{{- define "error" -}}
-	<!DOCTYPE html>
-	<html lang="en">
-	{{ template "head" }}
-	<body>
-		<h1>{{ .StatusCode }} {{ .StatusText }}</h1>
-		<p>
-			{{ .Message }} while serving {{ .Request.URL.Path }}.
-			Request ID: {{ .Data.RequestID }}
-		</p>
-		<p><i>This is a generic error page</i><p>
-	</body>
-	</html>
-	{{- end -}}
-
-	{{- define "500" -}}
-	<!DOCTYPE html>
-	<html lang="en">
-	{{ template "head" }}
-	<body>
-		<h1>Snap!</h1>
-		<h2>{{ .StatusCode }} {{ .StatusText }}</h2>
-		<p>
-			Something went really wrong and we've been notified!
-			Please try again later.
-		</p>
-		<p><i>
-			Error: {{ .Message }} while serving {{ .Request.URL.Path }}.
-			Request ID: {{ .Data.RequestID }}
-		</i></p>
-	</body>
-	</html>
-	{{- end -}}
-`
-	p := &Pages{template.Must(template.New("error").Parse(templates))}
+	p := &Pages{template.Must(template.New("error").Parse(exampleTemplates))}
 
 	req := httptest.NewRequest("GET", "http://example.com/foo", nil)
 	w := httptest.NewRecorder()
 
+	// Serves the client with the "500" template
 	err := p.Render(w, req, http.StatusInternalServerError, "DB connection", struct{ RequestID int }{666})
 	if err != nil {
 		log.Println(err)
@@ -300,6 +315,7 @@ func Example() {
 
 	w = httptest.NewRecorder()
 
+	// 400 is not defined, so the generic "error" template is used instead.
 	err = p.Render(w, req, http.StatusBadRequest, "Missing token in URL", struct{ RequestID int }{667})
 	if err != nil {
 		log.Println(err)
@@ -310,63 +326,10 @@ func Example() {
 
 	fmt.Println(resp.StatusCode)
 	fmt.Println(string(body))
-
-	// Output:
-	// 500
-	/*<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<title></title>
-	</head>
-	<body>
-		<h1>Snap!</h1>
-		<h2>500 Internal Server Error</h2>
-		<p>
-			Something went really wrong and we've been notified!
-			Please try again later.
-		</p>
-		<p><i>
-			Error: DB connection while serving /foo.
-			Request ID: 666
-		</i></p>
-	</body>
-	</html>*/
-	// 400
-	/*<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<title></title>
-	</head>
-	<body>
-		<h1>400 Bad Request</h1>
-		<p>
-			Missing token in URL while serving /foo.
-			Request ID: 667
-		</p>
-		<p><i>This is a generic error page</i><p>
-	</body>
-	</html>*/
 }
 
 func Example_notFoundHandler() {
-	templates := `{{- define "404" -}}
-	<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<title>{{ .String }}</title>
-	</head>
-	<body>
-		<h1>{{ .StatusCode }} {{ .StatusText }}</h1>
-		<p>
-			{{ .Request.URL.Path }} could not be found.
-	</body>
-	</html>
-	{{- end -}}`
-
-	p := &Pages{template.Must(template.New("error").Parse(templates))}
+	p := &Pages{template.Must(template.New("error").Parse(exampleTemplates))}
 
 	r := mux.NewRouter()
 	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

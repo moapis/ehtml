@@ -2,8 +2,6 @@
 // Use of this source code is governed by a License that can be found in the LICENSE file.
 // SPDX-License-Identifier: BSD-3-Clause
 
-// Package ehtml provides ways of rendering an error html page,
-// using Go templates.
 package ehtml
 
 import (
