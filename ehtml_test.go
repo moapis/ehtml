@@ -87,6 +87,18 @@ func TestData_String(t *testing.T) {
 	}
 }
 
+func TestData_Title(t *testing.T) {
+	d := &Data{
+		StatusCode: http.StatusBadRequest,
+		Message:    "Parsing form data",
+	}
+	want := "400 Bad Request: Parsing form data"
+
+	if got := d.Title(); got != want {
+		t.Errorf("Data.Title() = %v, want %v", got, want)
+	}
+}
+
 const defaultTmplOut = `<!DOCTYPE html>
 <html lang="en">
 <head>

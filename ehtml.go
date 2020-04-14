@@ -34,6 +34,11 @@ func (d *Data) String() string {
 	return fmt.Sprintf("%d %s: %s", d.StatusCode, d.StatusText(), d.Message)
 }
 
+// Title is an alias for String
+func (d *Data) Title() string {
+	return d.String()
+}
+
 // DefaultTmpl is a placeholder template for `Pages.Render()`
 const DefaultTmpl = `{{ define "error" -}}
 <!DOCTYPE html>
