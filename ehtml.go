@@ -102,9 +102,24 @@ func (p *Pages) template(s Status) *template.Template {
 	return defTmpl
 }
 
-var buffers = sync.Pool{
-	New: func() interface{} { return new(bytes.Buffer) },
+type bufPool struct {
+	p sync.Pool
 }
+
+func (p *bufPool) Get() *bytes.Buffer {
+	if b, ok := p.p.Get().(*bytes.Buffer); ok {
+		return b
+	}
+
+	return new(bytes.Buffer)
+}
+
+func (p *bufPool) Put(b *bytes.Buffer) {
+	b.Reset()
+	p.p.Put(b)
+}
+
+var buffers = &bufPool{}
 
 // RenderError is returned to the client if the template failed to render.
 // This doesn't look nice, but it prevents partial responses.
@@ -114,7 +129,7 @@ const RenderError = "500 Internal server error. While handling:\n%s"
 // In case of template execution errors,
 // "RenderError" including the original status and message is sent to the client.
 func (p *Pages) Render(w http.ResponseWriter, dp Provider) error {
-	buf := buffers.Get().(*bytes.Buffer)
+	buf := buffers.Get()
 	defer buffers.Put(buf)
 
 	if err := p.template(dp.Status()).Execute(buf, dp); err != nil {
