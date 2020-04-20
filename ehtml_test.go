@@ -14,16 +14,17 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gorilla/mux"
 )
 
-func TestData_StatusText(t *testing.T) {
+func TestStatus_String(t *testing.T) {
 	tests := []struct {
-		name       string
-		StatusCode int
-		want       string
+		name   string
+		status Status
+		want   string
 	}{
 		{
 			"Unknown",
@@ -38,20 +39,81 @@ func TestData_StatusText(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := &Data{
-				StatusCode: tt.StatusCode,
-			}
-			if got := d.StatusText(); got != tt.want {
+			if got := tt.status.String(); got != tt.want {
 				t.Errorf("Data.StatusText() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
+func TestStatus_int(t *testing.T) {
+	tests := []struct {
+		name string
+		s    Status
+		want int
+	}{
+		{
+			"Int",
+			400,
+			400,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.s.Int(); got != tt.want {
+				t.Errorf("Status.int() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStatus_toA(t *testing.T) {
+	tests := []struct {
+		name string
+		s    Status
+		want string
+	}{
+		{
+			"String",
+			400,
+			"400",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.s.toA(); got != tt.want {
+				t.Errorf("Status.toA() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestData_Request(t *testing.T) {
+	d := &Data{Req: httptest.NewRequest("GET", "http://example.com/foo", nil)}
+	if got := d.Request(); !reflect.DeepEqual(got, d.Req) {
+		t.Errorf("Data.Request() = %v, want %v", got, d.Req)
+	}
+
+}
+
+func TestData_Status(t *testing.T) {
+	d := &Data{Code: http.StatusTeapot}
+	if got := d.Status(); got != http.StatusTeapot {
+		t.Errorf("Data.Status() = %v, want %v", got, http.StatusTeapot)
+	}
+}
+
+func TestData_Message(t *testing.T) {
+	d := &Data{Msg: "FooBar"}
+	if got := d.Message(); got != "FooBar" {
+		t.Errorf("Data.Message() = %v, want %v", got, "FooBar")
+	}
+}
+
 func TestData_String(t *testing.T) {
 	type fields struct {
-		StatusCode int
-		Message    string
+		Code Status
+		Msg  string
 	}
 	tests := []struct {
 		name   string
@@ -61,15 +123,15 @@ func TestData_String(t *testing.T) {
 		{
 			"Code not set",
 			fields{
-				Message: "Something's missing",
+				Msg: "Something's missing",
 			},
 			"0 : Something's missing",
 		},
 		{
 			"Known",
 			fields{
-				StatusCode: http.StatusBadRequest,
-				Message:    "Parsing form data",
+				Code: http.StatusBadRequest,
+				Msg:  "Parsing form data",
 			},
 			"400 Bad Request: Parsing form data",
 		},
@@ -77,25 +139,13 @@ func TestData_String(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &Data{
-				StatusCode: tt.fields.StatusCode,
-				Message:    tt.fields.Message,
+				Code: tt.fields.Code,
+				Msg:  tt.fields.Msg,
 			}
 			if got := d.String(); got != tt.want {
 				t.Errorf("Data.String() = %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestData_Title(t *testing.T) {
-	d := &Data{
-		StatusCode: http.StatusBadRequest,
-		Message:    "Parsing form data",
-	}
-	want := "400 Bad Request: Parsing form data"
-
-	if got := d.Title(); got != want {
-		t.Errorf("Data.Title() = %v, want %v", got, want)
 	}
 }
 
@@ -127,15 +177,15 @@ func init() {
 }
 
 func TestPages_template(t *testing.T) {
-	data := &Data{
-		StatusCode: 404,
-		Message:    "Foo bar",
+	d := &Data{
+		Code: 404,
+		Msg:  "Foo bar",
 	}
 
 	tests := []struct {
 		name   string
 		tmpl   *template.Template
-		status int
+		status Status
 		want   string
 	}{
 		{
@@ -171,7 +221,7 @@ func TestPages_template(t *testing.T) {
 
 			var buf bytes.Buffer
 
-			if err := p.template(tt.status).Execute(&buf, data); err != nil {
+			if err := p.template(tt.status).Execute(&buf, d); err != nil {
 				t.Fatal(err)
 			}
 
@@ -186,12 +236,12 @@ func TestPages_Render(t *testing.T) {
 	errTmpl := template.Must(template.New("error").Parse("{{ .Missing }}"))
 
 	tests := []struct {
-		name       string
-		tmpl       *template.Template
-		statusCode int
-		want       string
-		wantCode   int
-		wantErr    bool
+		name     string
+		tmpl     *template.Template
+		code     Status
+		want     string
+		wantCode int
+		wantErr  bool
 	}{
 		{
 			"Default template",
@@ -216,10 +266,15 @@ func TestPages_Render(t *testing.T) {
 				Tmpl: tt.tmpl,
 			}
 
-			req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+			d := &Data{
+				Req:  httptest.NewRequest("GET", "http://example.com/foo", nil),
+				Code: tt.code,
+				Msg:  "Foo bar",
+			}
+
 			w := httptest.NewRecorder()
 
-			if err := p.Render(w, req, tt.statusCode, "Foo bar", nil); (err != nil) != tt.wantErr {
+			if err := p.Render(w, d); (err != nil) != tt.wantErr {
 				t.Fatalf("Pages.Render() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
@@ -246,7 +301,12 @@ func (errorWriter) WriteHeader(int)           {}
 
 func TestPages_Render_WriteError(t *testing.T) {
 	p := &Pages{}
-	if err := p.Render(errorWriter{}, nil, 404, "Foo bar", nil); !errors.Is(err, io.ErrClosedPipe) {
+	d := &Data{
+		Req:  httptest.NewRequest("GET", "http://example.com/foo", nil),
+		Code: http.StatusTeapot,
+		Msg:  "Foo bar",
+	}
+	if err := p.Render(errorWriter{}, d); !errors.Is(err, io.ErrClosedPipe) {
 		t.Errorf("Pages.Render() error = %v, wantErr %v", err, io.ErrClosedPipe)
 	}
 }
@@ -262,12 +322,12 @@ const exampleTemplates = `
 {{- define "error" -}}
 <!DOCTYPE html>
 <html lang="en">
-{{ template "head" }}
+{{ template "head" . }}
 <body>
-	<h1>{{ .StatusCode }} {{ .StatusText }}</h1>
+	<h1>{{ .Status.Int }} {{ .Status }}</h1>
 	<p>
 		{{ .Message }} while serving {{ .Request.URL.Path }}.
-		Request ID: {{ .Data.RequestID }}
+		Request ID: {{ .ReqID }}
 	</p>
 	<p><i>This is a generic error page</i><p>
 </body>
@@ -277,17 +337,17 @@ const exampleTemplates = `
 {{- define "500" -}}
 <!DOCTYPE html>
 <html lang="en">
-{{ template "head" }}
+{{ template "head" . }}
 <body>
 	<h1>Snap!</h1>
-	<h2>{{ .StatusCode }} {{ .StatusText }}</h2>
+	<h2>{{ .Status.Int }} {{ .Status }}</h2>
 	<p>
 		Something went really wrong and we've been notified!
 		Please try again later.
 	</p>
 	<p><i>
 		Error: {{ .Message }} while serving {{ .Request.URL.Path }}.
-		Request ID: {{ .Data.RequestID }}
+		Request ID: {{ .ReqID }}
 	</i></p>
 </body>
 </html>
@@ -297,12 +357,13 @@ const exampleTemplates = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	{{ template "head" }}
+	{{ template "head" . }}
 </head>
 <body>
-	<h1>{{ .StatusCode }} {{ .StatusText }}</h1>
+	<h1>{{ .Status.Int}} {{ .Status }}</h1>
 	<p>
 		{{ .Request.URL.Path }} could not be found.
+	</p>
 </body>
 </html>
 {{- end -}}`
@@ -313,8 +374,14 @@ func Example() {
 	req := httptest.NewRequest("GET", "http://example.com/foo", nil)
 	w := httptest.NewRecorder()
 
+	// Extend Data, as needed
+	type data struct {
+		Data
+		ReqID int
+	}
+
 	// Serves the client with the "500" template
-	err := p.Render(w, req, http.StatusInternalServerError, "DB connection", struct{ RequestID int }{666})
+	err := p.Render(w, &data{Data{req, http.StatusInternalServerError, "DB connection"}, 666})
 	if err != nil {
 		log.Println(err)
 	}
@@ -328,7 +395,7 @@ func Example() {
 	w = httptest.NewRecorder()
 
 	// 400 is not defined, so the generic "error" template is used instead.
-	err = p.Render(w, req, http.StatusBadRequest, "Missing token in URL", struct{ RequestID int }{667})
+	err = p.Render(w, &data{Data{req, http.StatusBadRequest, "Missing token in URL"}, 667})
 	if err != nil {
 		log.Println(err)
 	}
@@ -343,9 +410,9 @@ func Example() {
 func Example_notFoundHandler() {
 	p := &Pages{template.Must(template.New("error").Parse(exampleTemplates))}
 
-	r := mux.NewRouter()
-	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := p.Render(w, r, http.StatusNotFound, "", nil); err != nil {
+	rtr := mux.NewRouter()
+	rtr.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := p.Render(w, &Data{Req: r, Code: http.StatusNotFound}); err != nil {
 			log.Println(err)
 		}
 	})

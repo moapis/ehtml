@@ -13,30 +13,47 @@ import (
 	"sync"
 )
 
-// Data available in templates.
+// Status holds an HTTP status code
+type Status int
+
+// String returns the text descriptiom for the HTTP status code.
+// It returns the empty string if the code is unknown.
+func (s Status) String() string { return http.StatusText(int(s)) }
+
+// Int returns Status as int
+func (s Status) Int() int { return int(s) }
+
+func (s Status) toA() string { return strconv.Itoa(s.Int()) }
+
+// Provider of data to templates
+type Provider interface {
+	// Request returns the incomming http Request object
+	Request() *http.Request
+	Status() Status
+	Message() string
+	// String returns the status code, status text and message in a single string.
+	// For example: "400 Bad Request: Parsing form data"
+	String() string
+}
+
+// Data can be used as a default or embedded type to implement Provider.
 type Data struct {
-	Request    *http.Request // Request object as passed to `Render()`
-	StatusCode int
-	Message    string
-	Data       interface{} // Optional, additional Data
+	Req  *http.Request
+	Code Status
+	Msg  string
 }
 
-// StatusText returns a text for the HTTP status code. It returns the empty
-// string if the code is unknown.
-func (d *Data) StatusText() string {
-	return http.StatusText(d.StatusCode)
-}
+// Request implements Provider
+func (d *Data) Request() *http.Request { return d.Req }
 
-// String returns the status code, status text and message in a single string.
-// For example, in a template:
-//   {{ .String }} => 400 Bad Request: Parsing form data
+// Status implements Provider
+func (d *Data) Status() Status { return d.Code }
+
+// Message implements Provider
+func (d *Data) Message() string { return d.Msg }
+
 func (d *Data) String() string {
-	return fmt.Sprintf("%d %s: %s", d.StatusCode, d.StatusText(), d.Message)
-}
-
-// Title is an alias for String
-func (d *Data) Title() string {
-	return d.String()
+	return fmt.Sprintf("%d %s: %s", d.Code, d.Code, d.Msg)
 }
 
 // DefaultTmpl is a placeholder template for `Pages.Render()`
@@ -48,7 +65,7 @@ const DefaultTmpl = `{{ define "error" -}}
 	<title>{{ .String }}</title>
 </head>
 <body>
-	<h1>{{ .StatusCode }} {{ .StatusText }}</h1>
+	<h1>{{ .Status.Int }} {{ .Status }}</h1>
 	<p>{{ .Message }}</p>
 </body>
 </html>
@@ -69,12 +86,12 @@ type Pages struct {
 	Tmpl *template.Template
 }
 
-func (p *Pages) template(status int) *template.Template {
+func (p *Pages) template(s Status) *template.Template {
 	if p.Tmpl == nil {
 		return defTmpl
 	}
 
-	if tmpl := p.Tmpl.Lookup(strconv.Itoa(status)); tmpl != nil {
+	if tmpl := p.Tmpl.Lookup(s.toA()); tmpl != nil {
 		return tmpl
 	}
 
@@ -94,31 +111,20 @@ var buffers = sync.Pool{
 const RenderError = "500 Internal server error. While handling:\n%s"
 
 // Render a page for passed status code.
-// Data and Request are optional and can be nil,
-// if the template doesn't need them.
-// They are passed to the template as-is.
-//
 // In case of template execution errors,
-// RenderError including the original status and message is sent to the client.
-func (p *Pages) Render(w http.ResponseWriter, r *http.Request, statusCode int, msg string, data interface{}) error {
+// "RenderError" including the original status and message is sent to the client.
+func (p *Pages) Render(w http.ResponseWriter, dp Provider) error {
 	buf := buffers.Get().(*bytes.Buffer)
 	defer buffers.Put(buf)
 
-	d := &Data{
-		Request:    r,
-		StatusCode: statusCode,
-		Message:    msg,
-		Data:       data,
-	}
-
-	if err := p.template(statusCode).Execute(buf, d); err != nil {
+	if err := p.template(dp.Status()).Execute(buf, dp); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, RenderError, d)
+		fmt.Fprintf(w, RenderError, dp)
 
 		return fmt.Errorf("ehtml Render template: %w", err)
 	}
 
-	w.WriteHeader(statusCode)
+	w.WriteHeader(dp.Status().Int())
 	if _, err := buf.WriteTo(w); err != nil {
 		return fmt.Errorf("ehtml Render, write to client: %w", err)
 	}
